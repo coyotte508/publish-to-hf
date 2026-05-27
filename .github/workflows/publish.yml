@@ -24,12 +24,15 @@ jobs:
 
       - name: Exchange GitHub OIDC token for a Hub token
         run: |
+          set -euo pipefail
+
           ID_TOKEN=$(curl -sSf \
             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://huggingface.co" \
             | jq -r .value)
 
-          HF_TOKEN=$(curl -sSf -X POST "https://huggingface.co/oauth/token" \
+          # Capture body and status separately so we can print the error on 4xx/5xx.
+          RESPONSE=$(curl -sS -w '\n%{http_code}' -X POST "https://huggingface.co/oauth/token" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg t "$ID_TOKEN" --arg r "coyotte508/published-from-github" \
                   '{
@@ -37,9 +40,17 @@ jobs:
                     subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
                     subject_token:      $t,
                     resource:           $r
-                  }')" \
-            | jq -r .access_token)
+                  }')")
+          STATUS=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
 
+          if [ "$STATUS" -ne 200 ]; then
+            echo "::error::Token exchange failed with HTTP $STATUS"
+            echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+            exit 1
+          fi
+
+          HF_TOKEN=$(echo "$BODY" | jq -r .access_token)
           echo "::add-mask::$HF_TOKEN"
           echo "HF_TOKEN=$HF_TOKEN" >> "$GITHUB_ENV"
 
