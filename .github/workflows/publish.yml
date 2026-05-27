@@ -1,0 +1,49 @@
+name: Publish to Hugging Face
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write  # required so the job can request an OIDC token from GitHub
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install --upgrade "huggingface_hub>=1.16.1"
+
+      - name: Exchange GitHub OIDC token for a Hub token
+        run: |
+          ID_TOKEN=$(curl -sSf \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://huggingface.co" \
+            | jq -r .value)
+
+          HF_TOKEN=$(curl -sSf -X POST "https://huggingface.co/oauth/token" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg t "$ID_TOKEN" --arg r "coyotte508/published-from-github" \
+                  '{
+                    grant_type:         "urn:ietf:params:oauth:grant-type:token-exchange",
+                    subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
+                    subject_token:      $t,
+                    resource:           $r
+                  }')" \
+            | jq -r .access_token)
+
+          echo "::add-mask::$HF_TOKEN"
+          echo "HF_TOKEN=$HF_TOKEN" >> "$GITHUB_ENV"
+
+      - name: Upload model/ to the Hub
+        run: |
+          hf upload coyotte508/published-from-github ./model . \
+            --commit-message "Publish from ${GITHUB_SHA::7}"
