@@ -31,6 +31,15 @@ jobs:
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://huggingface.co" \
             | jq -r .value)
 
+          # Decode the JWT payload (middle segment) and print non-sensitive claims
+          # — useful for debugging "no trusted publisher matches" errors.
+          PAYLOAD=$(echo "$ID_TOKEN" | cut -d. -f2)
+          # Pad base64url to a multiple of 4 so `base64 -d` is happy.
+          while [ $((${#PAYLOAD} % 4)) -ne 0 ]; do PAYLOAD="${PAYLOAD}="; done
+          CLAIMS=$(echo "$PAYLOAD" | tr '_-' '/+' | base64 -d 2>/dev/null)
+          echo "OIDC token claims (issuer / repository / ref / workflow):"
+          echo "$CLAIMS" | jq '{iss, repository, ref, workflow, sub}'
+
           # Capture body and status separately so we can print the error on 4xx/5xx.
           RESPONSE=$(curl -sS -w '\n%{http_code}' -X POST "https://huggingface.co/oauth/token" \
             -H "Content-Type: application/json" \
