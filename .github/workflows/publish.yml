@@ -37,8 +37,8 @@ jobs:
           # Pad base64url to a multiple of 4 so `base64 -d` is happy.
           while [ $((${#PAYLOAD} % 4)) -ne 0 ]; do PAYLOAD="${PAYLOAD}="; done
           CLAIMS=$(echo "$PAYLOAD" | tr '_-' '/+' | base64 -d 2>/dev/null)
-          echo "OIDC token claims (issuer / repository / ref / workflow):"
-          echo "$CLAIMS" | jq '{iss, repository, ref, workflow, sub}'
+          echo "OIDC token claims:"
+          echo "$CLAIMS" | jq .
 
           # Capture body and status separately so we can print the error on 4xx/5xx.
           RESPONSE=$(curl -sS -w '\n%{http_code}' -X POST "https://huggingface.co/oauth/token" \
