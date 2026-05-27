@@ -40,8 +40,10 @@ jobs:
           echo "OIDC token claims:"
           echo "$CLAIMS" | jq .
 
-          # Capture body and status separately so we can print the error on 4xx/5xx.
-          RESPONSE=$(curl -sS -w '\n%{http_code}' -X POST "https://huggingface.co/oauth/token" \
+          # Capture body, status, and response headers separately so we can
+          # print the error (and x-request-id) on 4xx/5xx.
+          HEADERS_FILE=$(mktemp)
+          RESPONSE=$(curl -sS -D "$HEADERS_FILE" -w '\n%{http_code}' -X POST "https://huggingface.co/oauth/token" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg t "$ID_TOKEN" --arg r "coyotte508/published-from-github" \
                   '{
@@ -53,8 +55,14 @@ jobs:
           STATUS=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')
 
+          echo "Response status: $STATUS"
+          echo "Response headers:"
+          # Lowercase header names so x-request-id is easy to spot regardless of casing.
+          sed -E 's/^([A-Za-z0-9-]+):/\L\1:/' "$HEADERS_FILE"
+
           if [ "$STATUS" -ne 200 ]; then
-            echo "::error::Token exchange failed with HTTP $STATUS"
+            REQUEST_ID=$(grep -i '^x-request-id:' "$HEADERS_FILE" | head -n1 | sed 's/.*: *//' | tr -d '\r')
+            echo "::error::Token exchange failed with HTTP $STATUS (x-request-id: ${REQUEST_ID:-unknown})"
             echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
             exit 1
           fi
