@@ -44,6 +44,17 @@ jobs:
           echo "HF_TOKEN=$HF_TOKEN" >> "$GITHUB_ENV"
 
       - name: Upload model/ to the Hub
+        # We can't use `hf upload` because it calls create_repo() first, which
+        # requires permissions a Trusted Publisher token doesn't have.
+        # Calling upload_folder() directly skips that step.
         run: |
-          hf upload coyotte508/published-from-github ./model . \
-            --commit-message "Publish from ${GITHUB_SHA::7}"
+          python - <<'PY'
+          import os
+          from huggingface_hub import upload_folder
+
+          upload_folder(
+              repo_id="coyotte508/published-from-github",
+              folder_path="./model",
+              commit_message=f"Publish from {os.environ['GITHUB_SHA'][:7]}",
+          )
+          PY
