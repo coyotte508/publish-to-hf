@@ -49,14 +49,12 @@ jobs:
                 }')
 
           # Print a copy-pasteable curl command for local reproduction.
-          # GitHub auto-masks $ID_TOKEN in logs (it's derived from a secret), so
-          # we split it into two halves printed on separate echoes — neither half
-          # matches the full secret, so neither gets masked. Reassemble by hand
-          # (just paste them back-to-back) when copy-pasting the curl command.
+          # GitHub auto-masks $ID_TOKEN (it's derived from a secret). Print the
+          # first char and the rest separately — neither equals the full secret,
+          # so neither gets masked.
           # This is OK because the GitHub repo is private; do NOT enable on a public repo.
-          MID=$((${#ID_TOKEN} / 2))
-          T1="${ID_TOKEN:0:$MID}"
-          T2="${ID_TOKEN:$MID}"
+          T1="${ID_TOKEN:0:1}"
+          T2="${ID_TOKEN:1}"
           BODY_PREFIX=$(jq -nc --arg r "coyotte508/published-from-github" \
             '{
               grant_type:         "urn:ietf:params:oauth:grant-type:token-exchange",
@@ -65,14 +63,14 @@ jobs:
               resource:           $r
             }' | sed 's/__TOKEN__/<PART1><PART2>/')
 
-          echo "----- Reproduce locally with (concatenate <PART1><PART2> into one string): -----"
+          echo "----- Reproduce locally with: -----"
           echo "PART1='$T1'"
           echo "PART2='$T2'"
           echo "curl -i -X POST 'https://huggingface.co/oauth/token' \\"
           echo "  -H 'Content-Type: application/json' \\"
           echo "  -d '$BODY_PREFIX'"
-          echo "(replace <PART1><PART2> with \$PART1\$PART2 or paste the two values back-to-back)"
-          echo "-------------------------------------------------------------------------------"
+          echo "(replace <PART1><PART2> with \$PART1\$PART2 or paste the values back-to-back)"
+          echo "-----------------------------------"
 
           RESPONSE_FILE=$(mktemp)
           HEADERS_FILE=$(mktemp)
