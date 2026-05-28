@@ -55,22 +55,25 @@ jobs:
           # This is OK because the GitHub repo is private; do NOT enable on a public repo.
           T1="${ID_TOKEN:0:1}"
           T2="${ID_TOKEN:1}"
-          BODY_PREFIX=$(jq -nc --arg r "coyotte508/published-from-github" \
+          # Build the JSON body with a sentinel, then split it around the sentinel
+          # so we can emit a curl command that interpolates $PART1$PART2 inline.
+          # Standard bash trick: '...'"$VAR"'...' concatenates 3 adjacent strings
+          # into one argument, so the reader just pastes the 3 lines as-is.
+          JSON=$(jq -nc --arg r "coyotte508/published-from-github" \
             '{
               grant_type:         "urn:ietf:params:oauth:grant-type:token-exchange",
               subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
               subject_token:      "__TOKEN__",
               resource:           $r
-            }' | sed 's/__TOKEN__/<PART1><PART2>/')
+            }')
+          BEFORE="${JSON%%__TOKEN__*}"
+          AFTER="${JSON##*__TOKEN__}"
 
-          echo "----- Reproduce locally with: -----"
+          echo "----- Reproduce locally — paste all 3 lines: -----"
           echo "PART1='$T1'"
           echo "PART2='$T2'"
-          echo "curl -i -X POST 'https://huggingface.co/oauth/token' \\"
-          echo "  -H 'Content-Type: application/json' \\"
-          echo "  -d '$BODY_PREFIX'"
-          echo "(replace <PART1><PART2> with \$PART1\$PART2 or paste the values back-to-back)"
-          echo "-----------------------------------"
+          echo "curl -i -X POST 'https://huggingface.co/oauth/token' -H 'Content-Type: application/json' -d '${BEFORE}'\"\$PART1\$PART2\"'${AFTER}'"
+          echo "--------------------------------------------------"
 
           RESPONSE_FILE=$(mktemp)
           HEADERS_FILE=$(mktemp)
