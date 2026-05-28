@@ -23,6 +23,7 @@ jobs:
       - run: pip install --upgrade "huggingface_hub>=1.16.1"
 
       - name: Exchange GitHub OIDC token for a Hub token
+        id: hf-auth
         run: |
           set -euo pipefail
 
@@ -53,7 +54,13 @@ jobs:
 
           HF_TOKEN=$(jq -r .access_token "$BODY_FILE")
           echo "::add-mask::$HF_TOKEN"
-          echo "HF_TOKEN=$HF_TOKEN" >> "$GITHUB_ENV"
+          # Safe way to write to env/outputs
+          DELIM="EOF_$(openssl rand -hex 16)"
+          {
+            echo "token<<$DELIM"
+            echo "$HF_TOKEN"
+            echo "$DELIM"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload model/ to the Hub
         # `hf upload` calls create_repo() first, which Trusted Publisher tokens
@@ -61,6 +68,8 @@ jobs:
         # upload_folder() directly to skip the create step.
         # TODO: switch back to `hf upload` once the CLI skips create_repo for
         # hf_jwt_* tokens (see huggingface_hub PR).
+        env:
+          HF_TOKEN: ${{ steps.hf-auth.outputs.token }}
         run: |
           python - <<'PY'
           import os

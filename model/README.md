@@ -18,4 +18,4 @@ Every push to `main` on the GitHub repo:
 
 See the [Trusted Publishers documentation](https://huggingface.co/docs/hub/trusted-publishers) for the full walkthrough.
 
-<!-- bump 1 -->
+<!-- bump 2 -->
