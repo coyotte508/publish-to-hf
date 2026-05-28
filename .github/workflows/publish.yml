@@ -56,6 +56,19 @@ jobs:
           echo "HF_TOKEN=$HF_TOKEN" >> "$GITHUB_ENV"
 
       - name: Upload model/ to the Hub
+        # `hf upload` calls create_repo() first, which Trusted Publisher tokens
+        # can't do (they only have write access to one existing repo). Call
+        # upload_folder() directly to skip the create step.
+        # TODO: switch back to `hf upload` once the CLI skips create_repo for
+        # hf_jwt_* tokens (see huggingface_hub PR).
         run: |
-          hf upload coyotte508/published-from-github ./model . \
-            --commit-message "Publish from ${GITHUB_SHA::7}"
+          python - <<'PY'
+          import os
+          from huggingface_hub import upload_folder
+
+          upload_folder(
+              repo_id="coyotte508/published-from-github",
+              folder_path="./model",
+              commit_message=f"Publish from {os.environ['GITHUB_SHA'][:7]}",
+          )
+          PY
