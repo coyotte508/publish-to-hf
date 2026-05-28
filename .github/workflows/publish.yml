@@ -31,83 +31,31 @@ jobs:
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://huggingface.co" \
             | jq -r .value)
 
-          # Decode the JWT payload (middle segment) and print non-sensitive claims
-          # — useful for debugging "no trusted publisher matches" errors.
-          PAYLOAD=$(echo "$ID_TOKEN" | cut -d. -f2)
-          # Pad base64url to a multiple of 4 so `base64 -d` is happy.
-          while [ $((${#PAYLOAD} % 4)) -ne 0 ]; do PAYLOAD="${PAYLOAD}="; done
-          CLAIMS=$(echo "$PAYLOAD" | tr '_-' '/+' | base64 -d 2>/dev/null)
-          echo "OIDC token claims:"
-          echo "$CLAIMS" | jq .
-
-          REQUEST_BODY=$(jq -n --arg t "$ID_TOKEN" --arg r "coyotte508/published-from-github" \
-                '{
-                  grant_type:         "urn:ietf:params:oauth:grant-type:token-exchange",
-                  subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
-                  subject_token:      $t,
-                  resource:           $r
-                }')
-
-          # Print a copy-pasteable curl command for local reproduction.
-          # GitHub auto-masks $ID_TOKEN (it's derived from a secret). Print the
-          # first char and the rest separately — neither equals the full secret,
-          # so neither gets masked.
-          # This is OK because the GitHub repo is private; do NOT enable on a public repo.
-          T1="${ID_TOKEN:0:1}"
-          T2="${ID_TOKEN:1}"
-          # Build the JSON body with a sentinel, then split it around the sentinel
-          # so we can emit a curl command that interpolates $PART1$PART2 inline.
-          # Standard bash trick: '...'"$VAR"'...' concatenates 3 adjacent strings
-          # into one argument, so the reader just pastes the 3 lines as-is.
-          JSON=$(jq -nc --arg r "coyotte508/published-from-github" \
-            '{
-              grant_type:         "urn:ietf:params:oauth:grant-type:token-exchange",
-              subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
-              subject_token:      "__TOKEN__",
-              resource:           $r
-            }')
-          BEFORE="${JSON%%__TOKEN__*}"
-          AFTER="${JSON##*__TOKEN__}"
-
-          echo "----- Reproduce locally — paste all 3 lines: -----"
-          echo "PART1='$T1'"
-          echo "PART2='$T2'"
-          echo "curl -i -X POST 'https://huggingface.co/oauth/token' -H 'Content-Type: application/json' -d '${BEFORE}'\"\$PART1\$PART2\"'${AFTER}'"
-          echo "--------------------------------------------------"
-
-          RESPONSE_FILE=$(mktemp)
           HEADERS_FILE=$(mktemp)
-          STATUS=$(curl -sS -D "$HEADERS_FILE" -o "$RESPONSE_FILE" -w '%{http_code}' -X POST "https://huggingface.co/oauth/token" \
+          BODY_FILE=$(mktemp)
+          STATUS=$(curl -sS -D "$HEADERS_FILE" -o "$BODY_FILE" -w '%{http_code}' \
+            -X POST "https://huggingface.co/oauth/token" \
             -H "Content-Type: application/json" \
-            -d "$REQUEST_BODY")
-
-          echo "----- Response headers -----"
-          cat "$HEADERS_FILE"
-          echo "----- Response body --------"
-          cat "$RESPONSE_FILE"
-          echo "----------------------------"
+            -d "$(jq -n --arg t "$ID_TOKEN" --arg r "coyotte508/published-from-github" \
+                  '{
+                    grant_type:         "urn:ietf:params:oauth:grant-type:token-exchange",
+                    subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
+                    subject_token:      $t,
+                    resource:           $r
+                  }')")
 
           if [ "$STATUS" -ne 200 ]; then
-            echo "::error::Token exchange failed with HTTP $STATUS"
+            REQUEST_ID=$(grep -i '^x-request-id:' "$HEADERS_FILE" | sed 's/.*: *//' | tr -d '\r')
+            echo "::error::Token exchange failed with HTTP $STATUS (x-request-id: ${REQUEST_ID:-unknown})"
+            cat "$BODY_FILE"
             exit 1
           fi
 
-          HF_TOKEN=$(jq -r .access_token "$RESPONSE_FILE")
+          HF_TOKEN=$(jq -r .access_token "$BODY_FILE")
           echo "::add-mask::$HF_TOKEN"
           echo "HF_TOKEN=$HF_TOKEN" >> "$GITHUB_ENV"
 
       - name: Upload model/ to the Hub
-        # We can't use `hf upload` because it calls create_repo() first, which
-        # requires permissions a Trusted Publisher token doesn't have.
-        # Calling upload_folder() directly skips that step.
         run: |
-          python - <<'PY'
-          import os
-          from huggingface_hub import upload_folder
-
-          upload_folder(
-              repo_id="coyotte508/published-from-github",
-              folder_path="./model",
-              commit_message=f"Publish from {os.environ['GITHUB_SHA'][:7]}",
-          )
-          PY
+          hf upload coyotte508/published-from-github ./model . \
+            --commit-message "Publish from ${GITHUB_SHA::7}"
