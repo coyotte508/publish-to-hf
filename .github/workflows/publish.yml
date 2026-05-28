@@ -40,34 +40,42 @@ jobs:
           echo "OIDC token claims:"
           echo "$CLAIMS" | jq .
 
-          # Capture body, status, and response headers separately so we can
-          # print the error (and x-request-id) on 4xx/5xx.
-          HEADERS_FILE=$(mktemp)
-          RESPONSE=$(curl -sS -D "$HEADERS_FILE" -w '\n%{http_code}' -X POST "https://huggingface.co/oauth/token" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg t "$ID_TOKEN" --arg r "coyotte508/published-from-github" \
-                  '{
-                    grant_type:         "urn:ietf:params:oauth:grant-type:token-exchange",
-                    subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
-                    subject_token:      $t,
-                    resource:           $r
-                  }')")
-          STATUS=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
+          REQUEST_BODY=$(jq -n --arg t "$ID_TOKEN" --arg r "coyotte508/published-from-github" \
+                '{
+                  grant_type:         "urn:ietf:params:oauth:grant-type:token-exchange",
+                  subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
+                  subject_token:      $t,
+                  resource:           $r
+                }')
 
-          echo "Response status: $STATUS"
-          echo "Response headers:"
-          # Lowercase header names so x-request-id is easy to spot regardless of casing.
-          sed -E 's/^([A-Za-z0-9-]+):/\L\1:/' "$HEADERS_FILE"
+          # Print a copy-pasteable curl command for local reproduction.
+          # This is OK because the GitHub repo is private; do NOT enable on a public repo.
+          # Single-quote the body and escape any internal single quotes ('"'"' trick).
+          ESCAPED_BODY=$(printf "%s" "$REQUEST_BODY" | sed "s/'/'\\\\''/g")
+          echo "----- Reproduce locally with: -----"
+          echo "curl -i -X POST 'https://huggingface.co/oauth/token' \\"
+          echo "  -H 'Content-Type: application/json' \\"
+          echo "  -d '$ESCAPED_BODY'"
+          echo "-----------------------------------"
+
+          RESPONSE_FILE=$(mktemp)
+          HEADERS_FILE=$(mktemp)
+          STATUS=$(curl -sS -D "$HEADERS_FILE" -o "$RESPONSE_FILE" -w '%{http_code}' -X POST "https://huggingface.co/oauth/token" \
+            -H "Content-Type: application/json" \
+            -d "$REQUEST_BODY")
+
+          echo "----- Response headers -----"
+          cat "$HEADERS_FILE"
+          echo "----- Response body --------"
+          cat "$RESPONSE_FILE"
+          echo "----------------------------"
 
           if [ "$STATUS" -ne 200 ]; then
-            REQUEST_ID=$(grep -i '^x-request-id:' "$HEADERS_FILE" | head -n1 | sed 's/.*: *//' | tr -d '\r')
-            echo "::error::Token exchange failed with HTTP $STATUS (x-request-id: ${REQUEST_ID:-unknown})"
-            echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+            echo "::error::Token exchange failed with HTTP $STATUS"
             exit 1
           fi
 
-          HF_TOKEN=$(echo "$BODY" | jq -r .access_token)
+          HF_TOKEN=$(jq -r .access_token "$RESPONSE_FILE")
           echo "::add-mask::$HF_TOKEN"
           echo "HF_TOKEN=$HF_TOKEN" >> "$GITHUB_ENV"
 
