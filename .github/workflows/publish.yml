@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - run: pip install --upgrade "huggingface_hub>=1.16.1"
+      - run: pip install --upgrade "huggingface_hub>=1.18.0"
 
       - name: Exchange GitHub OIDC token for a Hub token
         id: hf-auth
@@ -67,21 +67,8 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Upload model/ to the Hub
-        # `hf upload` calls create_repo() first, which Trusted Publisher tokens
-        # can't do (they only have write access to one existing repo). Call
-        # upload_folder() directly to skip the create step.
-        # TODO: switch back to `hf upload` once the CLI skips create_repo for
-        # hf_jwt_* tokens (see huggingface_hub PR).
         env:
           HF_TOKEN: ${{ steps.hf-auth.outputs.token }}
         run: |
-          python - <<'PY'
-          import os
-          from huggingface_hub import upload_folder
-
-          upload_folder(
-              repo_id="coyotte508/published-from-github",
-              folder_path="./model",
-              commit_message=f"Publish from {os.environ['GITHUB_SHA'][:7]}",
-          )
-          PY
+          hf upload coyotte508/published-from-github ./model . \
+            --commit-message "Publish from ${GITHUB_SHA::7}"
