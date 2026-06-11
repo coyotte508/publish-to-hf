@@ -16,59 +16,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - run: pip install --upgrade "huggingface_hub>=1.18.0"
-
-      - name: Exchange GitHub OIDC token for a Hub token
-        id: hf-auth
+      - name: Install the hf CLI
         run: |
-          set -euo pipefail
-
-          # The HF repo to publish to. For non-model repos, prefix accordingly:
-          #   datasets/acme/awesome-dataset, spaces/acme/awesome-space, kernels/acme/awesome-kernel
-          RESOURCE="coyotte508/published-from-github"
-
-          ID_TOKEN=$(curl -sSf \
-            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://huggingface.co" \
-            | jq -r .value)
-
-          HEADERS_FILE=$(mktemp)
-          BODY_FILE=$(mktemp)
-          STATUS=$(curl -sS -D "$HEADERS_FILE" -o "$BODY_FILE" -w '%{http_code}' \
-            -X POST "https://huggingface.co/oauth/token" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg t "$ID_TOKEN" --arg r "$RESOURCE" \
-                  '{
-                    grant_type:         "urn:ietf:params:oauth:grant-type:token-exchange",
-                    subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
-                    subject_token:      $t,
-                    resource:           $r
-                  }')")
-
-          if [ "$STATUS" -ne 200 ]; then
-            REQUEST_ID=$(grep -i '^x-request-id:' "$HEADERS_FILE" | sed 's/.*: *//' | tr -d '\r')
-            echo "::error::Token exchange failed with HTTP $STATUS (x-request-id: ${REQUEST_ID:-unknown})"
-            cat "$BODY_FILE"
-            exit 1
-          fi
-
-          HF_TOKEN=$(jq -r .access_token "$BODY_FILE")
-          echo "::add-mask::$HF_TOKEN"
-          # Safe way to write to env/outputs
-          DELIM="EOF_$(openssl rand -hex 16)"
-          {
-            echo "token<<$DELIM"
-            echo "$HF_TOKEN"
-            echo "$DELIM"
-          } >> "$GITHUB_OUTPUT"
+          curl -LsSf https://hf.co/cli/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Upload model/ to the Hub
         env:
-          HF_TOKEN: ${{ steps.hf-auth.outputs.token }}
+          # The HF repo to publish to. For non-model repos, prefix accordingly:
+          #   datasets/acme/awesome-dataset, spaces/acme/awesome-space, kernels/acme/awesome-kernel
+          # On GitHub Actions, the hf CLI detects the provider, exchanges the
+          # OIDC token for a Hub token scoped to this resource, and uses it
+          # automatically.
+          HF_OIDC_RESOURCE: coyotte508/published-from-github
         run: |
           hf upload coyotte508/published-from-github ./model . \
             --commit-message "Publish from ${GITHUB_SHA::7}"

@@ -7,9 +7,9 @@ A minimal demo of publishing to the [Hugging Face Hub](https://huggingface.co) f
 
 ## How it works
 
-1. On push to `main`, the [`publish.yml`](./.github/workflows/publish.yml) workflow asks GitHub for a short-lived OIDC ID token (audience: `https://huggingface.co`).
-2. It exchanges that token at `https://huggingface.co/oauth/token` for a short-lived Hub token scoped to `coyotte508/published-from-github`.
-3. It uploads the contents of [`model/`](./model) to the Hub repo using `hf upload`.
+1. On push to `main`, the [`publish.yml`](./.github/workflows/publish.yml) workflow runs `hf upload` with the `HF_OIDC_RESOURCE` environment variable set to the target repo.
+2. The `hf` CLI detects it's running on GitHub Actions, requests a short-lived OIDC ID token from GitHub, and exchanges it at `https://huggingface.co/oauth/token` for a short-lived Hub token scoped to `coyotte508/published-from-github` — all automatically.
+3. The contents of [`model/`](./model) are uploaded to the Hub repo.
 
 No `HF_TOKEN` secret is stored anywhere in this repo or in GitHub.
 
@@ -22,9 +22,9 @@ To reproduce this for your own repo:
    - **Provider:** GitHub Actions
    - **Claims:**
      - `repository` = `your-gh-name/publish-to-hf`
-     - `ref` = `refs/heads/main`
+     - `branch` = `main`
      - `workflow` = `publish.yml`
-3. Edit [`publish.yml`](./.github/workflows/publish.yml) and replace `coyotte508/published-from-github` with your target repo.
+3. Edit [`publish.yml`](./.github/workflows/publish.yml) and replace `coyotte508/published-from-github` with your target repo (in both `HF_OIDC_RESOURCE` and the `hf upload` command).
 4. Push to `main` (or trigger the workflow manually) — done.
 
 ## Trigger a publish
