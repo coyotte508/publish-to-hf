@@ -13,7 +13,7 @@ This repo is published automatically from [`coyotte508/publish-to-hf`](https://g
 Every push to `main` on the GitHub repo:
 
 1. Mints a short-lived GitHub OIDC ID token (audience: `https://huggingface.co`).
-2. Exchanges it at `https://huggingface.co/oauth/token` for a short-lived Hub token scoped to this repo.
+2. Exchanges it at `https://huggingface.co/oauth/token` for a short-lived Hub token scoped to this repo (done automatically by the `hf` CLI).
 3. Uploads the contents of [`model/`](https://github.com/coyotte508/publish-to-hf/tree/main/model) here.
 
 See the [Trusted Publishers documentation](https://huggingface.co/docs/hub/trusted-publishers) for the full walkthrough.
